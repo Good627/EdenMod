@@ -172,6 +172,17 @@ public final class BridgeConfig {
 	/** Hide territory economy announcements (upgrades, bonuses, tax, borders, loadouts) from chat. */
 	public boolean hideEconomyMessages = false;
 
+	public static final List<String> DEFAULT_TERRITORY_LOSS_BLACKLIST = List.of("Timeworn Arch", "Pine Pillar Forest", "Evergreen Outbreak", "Burning Farm", "Waterfall Cave", "Paper Trail", "Big Mushroom Cave", "Collapsed Bridge", "Mycelial Expanse", "Dodegar's Forge", "Unicorn Trail", "Guardian of the Forest", "Heavenly Ingress", "Luminous Plateau", "Primal Fen", "Field of Life", "Path to Light", "Otherworldly Monolith", "Azure Frontier", "Nexus of Light");
+
+	/** Play an anvil falling sound when a territory is taken by an opposing guild. Off by default. */
+	public boolean territoryLossSound = false;
+
+	/** Master toggle for the territory loss blacklist. When disabled, sounds play for all territories. */
+	public boolean territoryLossBlacklistEnabled = true;
+
+	/** Territories excluded from playing the territory loss sound when captured. */
+	public List<String> territoryLossBlacklist = new ArrayList<>(DEFAULT_TERRITORY_LOSS_BLACKLIST);
+
 	/**
 	 * Run {@code /stream} automatically on entering a Wynncraft world. Off by default:
 	 * it changes what the server shows you, so it should be an opt-in.
@@ -454,6 +465,10 @@ public final class BridgeConfig {
 					} else {
 						config.radianceAdvanceNoticeSeconds = Math.max(0.0, Math.min(3.0, Math.round(config.radianceAdvanceNoticeSeconds * 4.0) / 4.0));
 					}
+					if (config.territoryLossBlacklist == null) {
+						config.territoryLossBlacklist = new ArrayList<>(DEFAULT_TERRITORY_LOSS_BLACKLIST);
+					}
+					config.territoryLossBlacklist.removeIf(t -> t == null || t.isBlank());
 					return config;
 				}
 			} catch (IOException | RuntimeException e) {

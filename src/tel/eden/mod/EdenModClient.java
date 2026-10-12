@@ -2484,6 +2484,7 @@ public final class EdenModClient implements ClientModInitializer {
 				WarTracker.onChat(warLine);
 				WarDPS.onChat(warLine);
 				tel.eden.mod.war.radiance.RadianceTracker.onChat(warLine);
+				tel.eden.mod.war.TerritoryLossTracker.onChat(warLine);
 			});
 			// Auto /stream sits above the socket guard on purpose: it is a local
 			// convenience and has nothing to do with the bridge, so it keeps working
