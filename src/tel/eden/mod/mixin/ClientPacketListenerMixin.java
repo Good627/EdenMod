@@ -29,6 +29,9 @@ public class ClientPacketListenerMixin {
 			EdenModClient mod = EdenModClient.instance();
 			if (mod != null) {
 				mod.handleWynncraftActionBar(packet.text());
+				if (mod.onWynncraft()) {
+					tel.eden.mod.raid.WitnessCooldownTracker.onMessage(packet.text());
+				}
 			}
 		}
 	}
