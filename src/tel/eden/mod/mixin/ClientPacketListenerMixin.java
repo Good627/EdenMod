@@ -106,8 +106,9 @@ public class ClientPacketListenerMixin {
 		if (packet.overlay()) {
 			// Reward feedback may be rendered as Wynncraft's ticker/action bar rather than a
 			// chat line. It is bookkeeping input, but must not enter the general chat relay.
-			if (mod != null) {
+			if (mod != null && mod.onWynncraft()) {
 				mod.handleRewardFeedback(packet.content());
+				tel.eden.mod.raid.WitnessCooldownTracker.onMessage(packet.content());
 			}
 			return;
 		}

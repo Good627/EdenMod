@@ -271,6 +271,9 @@ public final class BridgeConfig {
 	/** Minimum number of gambits required to ready up normally (range 0-3, default 1). */
 	public int raidGambitMinimum = 1;
 
+	/** Witness cooldown HUD timer for Orphion's Nexus of Light Room 2. */
+	public boolean witnessCooldownTracker = true;
+
 	/** Custom palette for the 10 party slots. Defaults to PartyHighlightManager.DEFAULT_PALETTE. */
 	public List<Integer> partyColors = new ArrayList<>(tel.eden.mod.party.PartyHighlightManager.DEFAULT_PALETTE);
 
