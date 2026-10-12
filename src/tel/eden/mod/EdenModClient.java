@@ -522,6 +522,7 @@ public final class EdenModClient implements ClientModInitializer {
 	public void onWorldRespawn() {
 		enteredWynnGameWorld = true;
 		guildLogSync.onWorldJoin();
+		tel.eden.mod.raid.WitnessCooldownTracker.reset();
 	}
 
 	/** Packet hooks for the invisible guild-log query (mirrors Wynntils' query path). */
