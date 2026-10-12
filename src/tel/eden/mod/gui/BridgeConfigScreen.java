@@ -157,7 +157,6 @@ public final class BridgeConfigScreen extends Screen {
 		addToggleRow(Category.WAR, "War info overlay (DPS/EHP)", () -> config.warDpsHud, v -> config.warDpsHud = v, "On", "Off", true);
 		addToggleRow(Category.WAR, "Weekly war count HUD", () -> config.warWeeklyCountHud, v -> config.warWeeklyCountHud = v, "On", "Off", false);
 		addToggleRow(Category.WAR, "Hide economy messages", () -> config.hideEconomyMessages, v -> config.hideEconomyMessages = v, "On", "Off", false);
-<<<<<<< HEAD
 		addToggleRow(Category.WAR, "Radiance tracker", () -> config.radianceTracker, v -> {
 			config.radianceTracker = v;
 			EdenModClient.syncRadianceGroup(config);
