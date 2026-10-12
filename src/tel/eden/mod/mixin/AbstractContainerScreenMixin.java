@@ -51,7 +51,8 @@ public abstract class AbstractContainerScreenMixin {
 					if (RaidGambitSafety.isRaidReadyMenu(menu) && !RaidGambitSafety.isPlayerAlreadyReadied(menu)) {
 						int enabled = RaidGambitSafety.countEnabledGambits(menu);
 						if (enabled < config.raidGambitMinimum) {
-							List<Component> tooltip = new ArrayList<>(cir.getReturnValue());
+							List<Component> base = cir.getReturnValue();
+							List<Component> tooltip = new ArrayList<>(base != null ? base : List.of());
 							tooltip.add(Component.empty());
 							tooltip.add(RaidGambitSafety.getTooltipWarning(config.raidGambitMinimum));
 							cir.setReturnValue(tooltip);
