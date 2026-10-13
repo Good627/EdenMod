@@ -64,6 +64,8 @@ public final class EmoteConfigScreen extends Screen {
 			saveCurrentPageToMemory();
 		}
 
+		// Options: empty, every unlocked emote, plus any saved favorite not (yet) in the
+		// unlocked list so an existing choice is never dropped.
 		slotButtons.clear();
 		options.clear();
 		options.add("");
