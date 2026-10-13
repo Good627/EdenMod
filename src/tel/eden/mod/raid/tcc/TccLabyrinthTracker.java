@@ -257,7 +257,7 @@ public final class TccLabyrinthTracker {
 			boolean moved = Math.abs(px - lastSentX) > 0.08 || Math.abs(pz - lastSentZ) > 0.08 || Math.abs(yaw - lastSentYaw) > 1.5f;
 			boolean keepalive = (now - lastBroadcastMs >= 2500L);
 			if ((moved || keepalive) && socket != null && socket.isConnected()) {
-				java.util.List<String> party = tel.eden.mod.raid.WitnessCooldownTracker.getRaidPartyMembers();
+				java.util.List<String> party = getRaidPartyMembers();
 				socket.sendTccMapPos(px, py, pz, yaw, isWings, party);
 				lastSentX = px;
 				lastSentZ = pz;
@@ -328,7 +328,7 @@ public final class TccLabyrinthTracker {
 			}
 			confirmExit(ep, config);
 			if (socket != null && socket.isConnected()) {
-				java.util.List<String> party = tel.eden.mod.raid.WitnessCooldownTracker.getRaidPartyMembers();
+				java.util.List<String> party = getRaidPartyMembers();
 				socket.sendTccExitReached(ep.name(), worldX, worldZ, party);
 			}
 		}
@@ -529,5 +529,21 @@ public final class TccLabyrinthTracker {
 
 	public static void setLastReportKeyMsForTest(long ms) {
 		lastReportKeyMs = ms;
+	}
+
+	public static java.util.List<String> getRaidPartyMembers() {
+		java.util.Set<String> members = new java.util.LinkedHashSet<>();
+		java.util.List<String> wynntilsMembers = tel.eden.mod.party.WynntilsPartyBridge.getPartyMembers();
+		if (wynntilsMembers != null) {
+			members.addAll(wynntilsMembers);
+		}
+		Minecraft mc = Minecraft.getInstance();
+		if (mc != null && mc.player != null) {
+			String myName = mc.player.getScoreboardName();
+			if (myName != null && !myName.isBlank()) {
+				members.add(myName);
+			}
+		}
+		return new java.util.ArrayList<>(members);
 	}
 }
