@@ -708,7 +708,7 @@ public final class EdenModClient implements ClientModInitializer {
 			})).then(ClientCommandManager.literal("aspects").then(ClientCommandManager.literal("pending").executes(ctx -> {
 				requestAspectsPending(ctx.getSource());
 				return 1;
-			}))).then(ClientCommandManager.literal("cf").executes(ctx -> {
+			})).then(ClientCommandManager.literal("optout").executes(ctx -> toggleRewardOptOut("aspects", true)).then(ClientCommandManager.argument("enabled", com.mojang.brigadier.arguments.BoolArgumentType.bool()).executes(ctx -> toggleRewardOptOut("aspects", com.mojang.brigadier.arguments.BoolArgumentType.getBool(ctx, "enabled"))))).then(ClientCommandManager.literal("optin").executes(ctx -> toggleRewardOptOut("aspects", false))).then(ClientCommandManager.literal("status").executes(ctx -> queryRewardStatus()))).then(ClientCommandManager.literal("emeralds").then(ClientCommandManager.literal("optout").executes(ctx -> toggleRewardOptOut("emeralds", true)).then(ClientCommandManager.argument("enabled", com.mojang.brigadier.arguments.BoolArgumentType.bool()).executes(ctx -> toggleRewardOptOut("emeralds", com.mojang.brigadier.arguments.BoolArgumentType.getBool(ctx, "enabled"))))).then(ClientCommandManager.literal("optin").executes(ctx -> toggleRewardOptOut("emeralds", false))).then(ClientCommandManager.literal("status").executes(ctx -> queryRewardStatus()))).then(ClientCommandManager.literal("rewards").executes(ctx -> queryRewardStatus()).then(ClientCommandManager.literal("status").executes(ctx -> queryRewardStatus()))).then(ClientCommandManager.literal("cf").executes(ctx -> {
 				requestCoinflip(ctx.getSource());
 				return 1;
 			})).then(ClientCommandManager.literal("diceroll").executes(ctx -> {
@@ -980,6 +980,26 @@ public final class EdenModClient implements ClientModInitializer {
 					giveawayStorageAspects = storageAspects;
 					giveawayError = (error == null || error.isEmpty()) ? null : error;
 					giveawayGeneration.incrementAndGet();
+				}
+
+				@Override
+				public void onRewardStatus(boolean aspectsBlocked, boolean emeraldsBlocked, int pendingAspects, long pendingEmeralds, String error, String color) {
+					if (error != null && !error.isEmpty()) {
+						displayDirect(() -> Component.literal("[Eden] " + error).withStyle(ChatFormatting.RED));
+						return;
+					}
+					long le = pendingEmeralds / 4096;
+					displayDirect(() -> Component.literal("[Eden] Rewards Status:\n").withStyle(ChatFormatting.GOLD).append(Component.literal(" • Aspects: ").withStyle(ChatFormatting.GRAY)).append(Component.literal(aspectsBlocked ? "Opted Out" : "Opted In").withStyle(aspectsBlocked ? ChatFormatting.RED : ChatFormatting.GREEN)).append(Component.literal(" (" + pendingAspects + " pending)\n").withStyle(ChatFormatting.YELLOW)).append(Component.literal(" • Emeralds: ").withStyle(ChatFormatting.GRAY)).append(Component.literal(emeraldsBlocked ? "Opted Out" : "Opted In").withStyle(emeraldsBlocked ? ChatFormatting.RED : ChatFormatting.GREEN)).append(Component.literal(" (" + le + " LE pending)").withStyle(ChatFormatting.YELLOW)));
+				}
+
+				@Override
+				public void onRewardOptOutReply(String rewardKind, boolean blocked, String error, String color) {
+					if (error != null && !error.isEmpty()) {
+						displayDirect(() -> Component.literal("[Eden] " + error).withStyle(ChatFormatting.RED));
+						return;
+					}
+					String verb = blocked ? "opted out of" : "opted in to";
+					displayDirect(() -> Component.literal("[Eden] You are now " + verb + " " + rewardKind + " from guild raids.").withStyle(blocked ? ChatFormatting.RED : ChatFormatting.GREEN));
 				}
 
 				@Override
@@ -1364,6 +1384,26 @@ public final class EdenModClient implements ClientModInitializer {
 			return;
 		}
 		current.sendDiceroll();
+	}
+
+	private int queryRewardStatus() {
+		BridgeWebSocketClient current = socket;
+		if (current == null || !current.isConnected()) {
+			displayDirect(() -> Component.literal("[Eden] Unable to query rewards: bridge is not connected.").withStyle(ChatFormatting.RED));
+			return 0;
+		}
+		current.sendRewardStatusRequest();
+		return 1;
+	}
+
+	private int toggleRewardOptOut(String kind, boolean blocked) {
+		BridgeWebSocketClient current = socket;
+		if (current == null || !current.isConnected()) {
+			displayDirect(() -> Component.literal("[Eden] Unable to update opt-out: bridge is not connected.").withStyle(ChatFormatting.RED));
+			return 0;
+		}
+		current.sendRewardOptOutRequest(kind, blocked);
+		return 1;
 	}
 
 	private void requestAspectsPending(FabricClientCommandSource source) {
@@ -2270,7 +2310,7 @@ public final class EdenModClient implements ClientModInitializer {
 	private record HelpEntry(String command, String description) {
 	}
 
-	private static final List<HelpEntry> HELP_ENTRIES = List.of(new HelpEntry("/eden config", "open the config screen"), new HelpEntry("/eden online", "who's connected to the bridge"), new HelpEntry("/eden cf", "flip a coin"), new HelpEntry("/eden diceroll", "roll a die"), new HelpEntry("/eden wars [days]", "guild war counts (same as Discord)"), new HelpEntry("/eden emojis", "open the chat emote picker"), new HelpEntry("/eden party", "list open parties (click to join)"), new HelpEntry("/eden party create <raid> [note]", "open a raid party"), new HelpEntry("/eden party join <id>", "join a party"), new HelpEntry("/eden party leave [id]", "leave your party"), new HelpEntry("/eden party disband", "disband your hosted party"), new HelpEntry("/eden anni <size> [note]", "open an Annihilation party (2-10)"), new HelpEntry("/eden command alias", "open the command alias editor"), new HelpEntry("/eden command keybind", "open the command keybind editor"), new HelpEntry("/eden update", "check for a pending update"), new HelpEntry("/eden update download", "download the update now (applies on exit)"), new HelpEntry("/eden aspects pending", "members' pending aspects — Chiefs only"), new HelpEntry("/eden gift <member> <aspect|emerald|tome> <amount>", "gift guild rewards — Chiefs only"), new HelpEntry("/eden dump <member>", "gift all guild-bank emeralds to a member — Chiefs only"), new HelpEntry("/eden deduct <aspects|emeralds> <member> <amount>", "deduct a payout from pending rewards — Chiefs only"), new HelpEntry("/eden ally view", "view guild ally activity (most inactive to active)"), new HelpEntry("/eden ally add <name>", "add a guild ally — Strategist+ only"), new HelpEntry("/eden ally remove <name>", "remove a guild ally — Strategist+ only"), new HelpEntry("/eden help", "this help screen"));
+	private static final List<HelpEntry> HELP_ENTRIES = List.of(new HelpEntry("/eden config", "open the config screen"), new HelpEntry("/eden online", "who's connected to the bridge"), new HelpEntry("/eden cf", "flip a coin"), new HelpEntry("/eden diceroll", "roll a die"), new HelpEntry("/eden wars [days]", "guild war counts (same as Discord)"), new HelpEntry("/eden emojis", "open the chat emote picker"), new HelpEntry("/eden party", "list open parties (click to join)"), new HelpEntry("/eden party create <raid> [note]", "open a raid party"), new HelpEntry("/eden party join <id>", "join a party"), new HelpEntry("/eden party leave [id]", "leave your party"), new HelpEntry("/eden party disband", "disband your hosted party"), new HelpEntry("/eden anni <size> [note]", "open an Annihilation party (2-10)"), new HelpEntry("/eden command alias", "open the command alias editor"), new HelpEntry("/eden command keybind", "open the command keybind editor"), new HelpEntry("/eden update", "check for a pending update"), new HelpEntry("/eden update download", "download the update now (applies on exit)"), new HelpEntry("/eden aspects pending", "members' pending aspects — Chiefs only"), new HelpEntry("/eden gift <member> <aspect|emerald|tome> <amount>", "gift guild rewards — Chiefs only"), new HelpEntry("/eden dump <member>", "gift all guild-bank emeralds to a member — Chiefs only"), new HelpEntry("/eden deduct <aspects|emeralds> <member> <amount>", "deduct a payout from pending rewards — Chiefs only"), new HelpEntry("/eden ally view", "view guild ally activity (most inactive to active)"), new HelpEntry("/eden ally add <name>", "add a guild ally — Strategist+ only"), new HelpEntry("/eden ally remove <name>", "remove a guild ally — Strategist+ only"), new HelpEntry("/eden rewards", "check your pending aspects/emeralds and opt-out status"), new HelpEntry("/eden aspects optout [true|false]", "opt out of or into receiving aspects"), new HelpEntry("/eden emeralds optout [true|false]", "opt out of or into receiving emeralds"), new HelpEntry("/eden help", "this help screen"));
 
 	private static final class TrackedCommandKeybind {
 		private final String input;
