@@ -281,6 +281,9 @@ public final class EdenModClient implements ClientModInitializer {
 	// Set when boot-time attestation fails — jar hash has no GitHub attestation, which
 	// means the jar is either unofficial or has been tampered with.
 	private volatile boolean pendingBootAttestationFailed;
+	private volatile long pendingRewardStatusExpiryMs = 0L;
+	private volatile long pendingRewardOptOutExpiryMs = 0L;
+	private volatile boolean pendingRewardOptOutBlocked = false;
 	// Guards the one-shot attestation-failure report to the bridge (sent on first connect
 	// after a failed boot check; skipped if attestation passed or was never run).
 	private volatile boolean attestationFailureReported;
@@ -572,6 +575,17 @@ public final class EdenModClient implements ClientModInitializer {
 		guildLogSync.setStorageReporter(storage -> relayStorage(storage.aspects(), storage.tomes(), storage.emeralds()));
 		guildLogSync.setManageReporter(snapshot -> {
 			BridgeWebSocketClient current = socket;
+			long nowMs = System.currentTimeMillis();
+			if (pendingRewardStatusExpiryMs > 0L && (nowMs > pendingRewardStatusExpiryMs || current == null || !current.isConnected())) {
+				pendingRewardStatusExpiryMs = 0L;
+				displayDirect(() -> Component.literal("[Eden] Failed to fetch reward status").withStyle(ChatFormatting.RED));
+			}
+			if (pendingRewardOptOutExpiryMs > 0L && (nowMs > pendingRewardOptOutExpiryMs || current == null || !current.isConnected())) {
+				pendingRewardOptOutExpiryMs = 0L;
+				String warning = pendingRewardOptOutBlocked ? "Failed to opt out of rewards" : "Failed to opt in to rewards";
+				displayDirect(() -> Component.literal("[Eden] " + warning).withStyle(ChatFormatting.RED));
+			}
+
 			if (current != null) {
 				current.sendGuildManageStatus(snapshot);
 			}
@@ -984,8 +998,9 @@ public final class EdenModClient implements ClientModInitializer {
 
 				@Override
 				public void onRewardStatus(boolean aspectsBlocked, boolean emeraldsBlocked, int pendingAspects, long pendingEmeralds, String error, String color) {
+					pendingRewardStatusExpiryMs = 0L;
 					if (error != null && !error.isEmpty()) {
-						displayDirect(() -> Component.literal("[Eden] " + error).withStyle(ChatFormatting.RED));
+						displayDirect(() -> Component.literal("[Eden] Failed to fetch reward status").withStyle(ChatFormatting.RED));
 						return;
 					}
 					long le = pendingEmeralds / 4096;
@@ -994,8 +1009,10 @@ public final class EdenModClient implements ClientModInitializer {
 
 				@Override
 				public void onRewardOptOutReply(String rewardKind, boolean blocked, String error, String color) {
+					pendingRewardOptOutExpiryMs = 0L;
 					if (error != null && !error.isEmpty()) {
-						displayDirect(() -> Component.literal("[Eden] " + error).withStyle(ChatFormatting.RED));
+						String warning = blocked ? "Failed to opt out of rewards" : "Failed to opt in to rewards";
+						displayDirect(() -> Component.literal("[Eden] " + warning).withStyle(ChatFormatting.RED));
 						return;
 					}
 					String verb = blocked ? "opted out of" : "opted in to";
@@ -1389,9 +1406,10 @@ public final class EdenModClient implements ClientModInitializer {
 	private int queryRewardStatus() {
 		BridgeWebSocketClient current = socket;
 		if (current == null || !current.isConnected()) {
-			displayDirect(() -> Component.literal("[Eden] Unable to query rewards: bridge is not connected.").withStyle(ChatFormatting.RED));
+			displayDirect(() -> Component.literal("[Eden] Failed to fetch reward status").withStyle(ChatFormatting.RED));
 			return 0;
 		}
+		pendingRewardStatusExpiryMs = System.currentTimeMillis() + 4000L;
 		current.sendRewardStatusRequest();
 		return 1;
 	}
@@ -1399,10 +1417,18 @@ public final class EdenModClient implements ClientModInitializer {
 	private int toggleRewardOptOut(String kind, boolean blocked) {
 		BridgeWebSocketClient current = socket;
 		if (current == null || !current.isConnected()) {
-			displayDirect(() -> Component.literal("[Eden] Unable to update opt-out: bridge is not connected.").withStyle(ChatFormatting.RED));
+			String warning = blocked ? "Failed to opt out of rewards" : "Failed to opt in to rewards";
+			displayDirect(() -> Component.literal("[Eden] " + warning).withStyle(ChatFormatting.RED));
 			return 0;
 		}
-		current.sendRewardOptOutRequest(kind, blocked);
+		pendingRewardOptOutBlocked = blocked;
+		pendingRewardOptOutExpiryMs = System.currentTimeMillis() + 4000L;
+		if (!current.sendRewardOptOutRequest(kind, blocked)) {
+			pendingRewardOptOutExpiryMs = 0L;
+			String warning = blocked ? "Failed to opt out of rewards" : "Failed to opt in to rewards";
+			displayDirect(() -> Component.literal("[Eden] " + warning).withStyle(ChatFormatting.RED));
+			return 0;
+		}
 		return 1;
 	}
 
