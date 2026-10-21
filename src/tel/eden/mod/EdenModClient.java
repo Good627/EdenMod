@@ -283,9 +283,12 @@ public final class EdenModClient implements ClientModInitializer {
 	private volatile boolean pendingBootAttestationFailed;
 	private volatile boolean pendingRewardStatus;
 	private volatile long rewardStatusRequestSeq;
+	private volatile long userRewardStatusRequestSeq;
 	private volatile boolean pendingRewardOptOut;
 	private volatile boolean pendingRewardOptOutBlocked;
 	private volatile long rewardOptOutRequestSeq;
+	private volatile Boolean aspectsBlockedState;
+	private volatile Boolean emeraldsBlockedState;
 	// Guards the one-shot attestation-failure report to the bridge (sent on first connect
 	// after a failed boot check; skipped if attestation passed or was never run).
 	private volatile boolean attestationFailureReported;
@@ -683,6 +686,8 @@ public final class EdenModClient implements ClientModInitializer {
 			// tracking. The war board itself survives a world swap (the bridge socket stays
 			// open and keeps it current); disconnect() clears it fully.
 			ScoreboardCapture.reset();
+			aspectsBlockedState = null;
+			emeraldsBlockedState = null;
 			RaidPartyTracker.reset();
 			AllianceMenuScraper.reset();
 			GuildMenuScraper.reset();
@@ -990,8 +995,16 @@ public final class EdenModClient implements ClientModInitializer {
 				@Override
 				public void onRewardStatus(boolean aspectsBlocked, boolean emeraldsBlocked, int pendingAspects, long pendingEmeralds, String error, String color) {
 					pendingRewardStatus = false;
+					boolean wasUserRequest = (userRewardStatusRequestSeq == rewardStatusRequestSeq);
 					if (error != null && !error.isEmpty()) {
-						displayDirect(() -> Component.literal("[Eden] Failed to fetch reward status").withStyle(ChatFormatting.RED));
+						if (wasUserRequest) {
+							displayDirect(() -> Component.literal("[Eden] Failed to fetch reward status").withStyle(ChatFormatting.RED));
+						}
+						return;
+					}
+					aspectsBlockedState = aspectsBlocked;
+					emeraldsBlockedState = emeraldsBlocked;
+					if (!wasUserRequest) {
 						return;
 					}
 					long le = pendingEmeralds / 4096;
@@ -1002,9 +1015,18 @@ public final class EdenModClient implements ClientModInitializer {
 				public void onRewardOptOutReply(String rewardKind, boolean blocked, String error, String color) {
 					pendingRewardOptOut = false;
 					if (error != null && !error.isEmpty()) {
+						if (error.contains("already")) {
+							displayColoredDirect(color != null && !color.isEmpty() ? color : "FFFF55", () -> Component.literal("[Eden] " + error).withStyle(ChatFormatting.YELLOW));
+							return;
+						}
 						String warning = blocked ? "Failed to opt out of rewards" : "Failed to opt in to rewards";
 						displayDirect(() -> Component.literal("[Eden] " + warning).withStyle(ChatFormatting.RED));
 						return;
+					}
+					if ("aspects".equalsIgnoreCase(rewardKind)) {
+						aspectsBlockedState = blocked;
+					} else if ("emeralds".equalsIgnoreCase(rewardKind)) {
+						emeraldsBlockedState = blocked;
 					}
 					String verb = blocked ? "opted out of" : "opted in to";
 					displayDirect(() -> Component.literal("[Eden] You are now " + verb + " " + rewardKind + " from guild raids.").withStyle(blocked ? ChatFormatting.RED : ChatFormatting.GREEN));
@@ -1395,25 +1417,36 @@ public final class EdenModClient implements ClientModInitializer {
 	}
 
 	private int queryRewardStatus() {
+		return queryRewardStatus(false);
+	}
+
+	private int queryRewardStatus(boolean silent) {
 		BridgeWebSocketClient current = socket;
 		if (current == null || !current.isConnected()) {
-			displayDirect(() -> Component.literal("[Eden] Failed to fetch reward status").withStyle(ChatFormatting.RED));
+			if (!silent) {
+				displayDirect(() -> Component.literal("[Eden] Failed to fetch reward status").withStyle(ChatFormatting.RED));
+			}
 			return 0;
 		}
 		long seq = ++rewardStatusRequestSeq;
 		pendingRewardStatus = true;
+		if (!silent) {
+			userRewardStatusRequestSeq = seq;
+		}
 		current.sendRewardStatusRequest();
-		java.util.concurrent.CompletableFuture.delayedExecutor(4, java.util.concurrent.TimeUnit.SECONDS).execute(() -> {
-			Minecraft client = Minecraft.getInstance();
-			if (client != null) {
-				client.execute(() -> {
-					if (rewardStatusRequestSeq == seq && pendingRewardStatus) {
-						pendingRewardStatus = false;
-						displayDirect(() -> Component.literal("[Eden] Failed to fetch reward status").withStyle(ChatFormatting.RED));
-					}
-				});
-			}
-		});
+		if (!silent) {
+			java.util.concurrent.CompletableFuture.delayedExecutor(4, java.util.concurrent.TimeUnit.SECONDS).execute(() -> {
+				Minecraft client = Minecraft.getInstance();
+				if (client != null) {
+					client.execute(() -> {
+						if (rewardStatusRequestSeq == seq && pendingRewardStatus) {
+							pendingRewardStatus = false;
+							displayDirect(() -> Component.literal("[Eden] Failed to fetch reward status").withStyle(ChatFormatting.RED));
+						}
+					});
+				}
+			});
+		}
 		return 1;
 	}
 
@@ -1422,6 +1455,12 @@ public final class EdenModClient implements ClientModInitializer {
 		if (current == null || !current.isConnected()) {
 			String warning = blocked ? "Failed to opt out of rewards" : "Failed to opt in to rewards";
 			displayDirect(() -> Component.literal("[Eden] " + warning).withStyle(ChatFormatting.RED));
+			return 0;
+		}
+		Boolean known = "aspects".equalsIgnoreCase(kind) ? aspectsBlockedState : ("emeralds".equalsIgnoreCase(kind) ? emeraldsBlockedState : null);
+		if (known != null && known == blocked) {
+			String verb = blocked ? "opted out of" : "opted in to";
+			displayDirect(() -> Component.literal("[Eden] You are already " + verb + " " + kind + " from guild raids.").withStyle(ChatFormatting.YELLOW));
 			return 0;
 		}
 		long seq = ++rewardOptOutRequestSeq;
@@ -2496,6 +2535,7 @@ public final class EdenModClient implements ClientModInitializer {
 			}
 		}
 		syncRadianceGroup(config);
+		queryRewardStatus(true);
 	}
 
 	public static void syncRadianceGroup(BridgeConfig config) {
@@ -2530,6 +2570,8 @@ public final class EdenModClient implements ClientModInitializer {
 		// Drop the captured scoreboard + war-board state so nothing carries into the next
 		// connection (stale timers/defence/heads).
 		ScoreboardCapture.reset();
+		aspectsBlockedState = null;
+		emeraldsBlockedState = null;
 		AttackTimerMenu.reset();
 		// Likewise the raid tally: it holds players from the session that just ended, and
 		// after an account switch could attribute them to another guild's raid.
