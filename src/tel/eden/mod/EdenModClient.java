@@ -281,9 +281,11 @@ public final class EdenModClient implements ClientModInitializer {
 	// Set when boot-time attestation fails — jar hash has no GitHub attestation, which
 	// means the jar is either unofficial or has been tampered with.
 	private volatile boolean pendingBootAttestationFailed;
-	private volatile long pendingRewardStatusExpiryMs = 0L;
-	private volatile long pendingRewardOptOutExpiryMs = 0L;
-	private volatile boolean pendingRewardOptOutBlocked = false;
+	private volatile boolean pendingRewardStatus;
+	private volatile long rewardStatusRequestSeq;
+	private volatile boolean pendingRewardOptOut;
+	private volatile boolean pendingRewardOptOutBlocked;
+	private volatile long rewardOptOutRequestSeq;
 	// Guards the one-shot attestation-failure report to the bridge (sent on first connect
 	// after a failed boot check; skipped if attestation passed or was never run).
 	private volatile boolean attestationFailureReported;
@@ -575,17 +577,6 @@ public final class EdenModClient implements ClientModInitializer {
 		guildLogSync.setStorageReporter(storage -> relayStorage(storage.aspects(), storage.tomes(), storage.emeralds()));
 		guildLogSync.setManageReporter(snapshot -> {
 			BridgeWebSocketClient current = socket;
-			long nowMs = System.currentTimeMillis();
-			if (pendingRewardStatusExpiryMs > 0L && (nowMs > pendingRewardStatusExpiryMs || current == null || !current.isConnected())) {
-				pendingRewardStatusExpiryMs = 0L;
-				displayDirect(() -> Component.literal("[Eden] Failed to fetch reward status").withStyle(ChatFormatting.RED));
-			}
-			if (pendingRewardOptOutExpiryMs > 0L && (nowMs > pendingRewardOptOutExpiryMs || current == null || !current.isConnected())) {
-				pendingRewardOptOutExpiryMs = 0L;
-				String warning = pendingRewardOptOutBlocked ? "Failed to opt out of rewards" : "Failed to opt in to rewards";
-				displayDirect(() -> Component.literal("[Eden] " + warning).withStyle(ChatFormatting.RED));
-			}
-
 			if (current != null) {
 				current.sendGuildManageStatus(snapshot);
 			}
@@ -998,7 +989,7 @@ public final class EdenModClient implements ClientModInitializer {
 
 				@Override
 				public void onRewardStatus(boolean aspectsBlocked, boolean emeraldsBlocked, int pendingAspects, long pendingEmeralds, String error, String color) {
-					pendingRewardStatusExpiryMs = 0L;
+					pendingRewardStatus = false;
 					if (error != null && !error.isEmpty()) {
 						displayDirect(() -> Component.literal("[Eden] Failed to fetch reward status").withStyle(ChatFormatting.RED));
 						return;
@@ -1009,7 +1000,7 @@ public final class EdenModClient implements ClientModInitializer {
 
 				@Override
 				public void onRewardOptOutReply(String rewardKind, boolean blocked, String error, String color) {
-					pendingRewardOptOutExpiryMs = 0L;
+					pendingRewardOptOut = false;
 					if (error != null && !error.isEmpty()) {
 						String warning = blocked ? "Failed to opt out of rewards" : "Failed to opt in to rewards";
 						displayDirect(() -> Component.literal("[Eden] " + warning).withStyle(ChatFormatting.RED));
@@ -1409,8 +1400,20 @@ public final class EdenModClient implements ClientModInitializer {
 			displayDirect(() -> Component.literal("[Eden] Failed to fetch reward status").withStyle(ChatFormatting.RED));
 			return 0;
 		}
-		pendingRewardStatusExpiryMs = System.currentTimeMillis() + 4000L;
+		long seq = ++rewardStatusRequestSeq;
+		pendingRewardStatus = true;
 		current.sendRewardStatusRequest();
+		java.util.concurrent.CompletableFuture.delayedExecutor(4, java.util.concurrent.TimeUnit.SECONDS).execute(() -> {
+			Minecraft client = Minecraft.getInstance();
+			if (client != null) {
+				client.execute(() -> {
+					if (rewardStatusRequestSeq == seq && pendingRewardStatus) {
+						pendingRewardStatus = false;
+						displayDirect(() -> Component.literal("[Eden] Failed to fetch reward status").withStyle(ChatFormatting.RED));
+					}
+				});
+			}
+		});
 		return 1;
 	}
 
@@ -1421,14 +1424,27 @@ public final class EdenModClient implements ClientModInitializer {
 			displayDirect(() -> Component.literal("[Eden] " + warning).withStyle(ChatFormatting.RED));
 			return 0;
 		}
+		long seq = ++rewardOptOutRequestSeq;
+		pendingRewardOptOut = true;
 		pendingRewardOptOutBlocked = blocked;
-		pendingRewardOptOutExpiryMs = System.currentTimeMillis() + 4000L;
 		if (!current.sendRewardOptOutRequest(kind, blocked)) {
-			pendingRewardOptOutExpiryMs = 0L;
+			pendingRewardOptOut = false;
 			String warning = blocked ? "Failed to opt out of rewards" : "Failed to opt in to rewards";
 			displayDirect(() -> Component.literal("[Eden] " + warning).withStyle(ChatFormatting.RED));
 			return 0;
 		}
+		java.util.concurrent.CompletableFuture.delayedExecutor(4, java.util.concurrent.TimeUnit.SECONDS).execute(() -> {
+			Minecraft client = Minecraft.getInstance();
+			if (client != null) {
+				client.execute(() -> {
+					if (rewardOptOutRequestSeq == seq && pendingRewardOptOut) {
+						pendingRewardOptOut = false;
+						String warning = blocked ? "Failed to opt out of rewards" : "Failed to opt in to rewards";
+						displayDirect(() -> Component.literal("[Eden] " + warning).withStyle(ChatFormatting.RED));
+					}
+				});
+			}
+		});
 		return 1;
 	}
 
